@@ -18,7 +18,7 @@ def load_data(uploaded_file):
     data['parental_education_score'] = (data['Medu'] + data['Fedu']) / 2
 
     # Create a dropout prediction column (dummy for now, to be calculated later)
-    data['dropout'] = data['absences'].apply(la mbda x: 'yes' if x > 20 else 'no')
+    data['dropout'] = data['absences'].apply(lambda x: 'yes' if x > 20 else 'no')
 
     return data
 
