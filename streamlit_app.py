@@ -77,6 +77,13 @@ def plot_visualizations(data):
     sns.lineplot(data=data['grade_trend'])
     st.pyplot(fig)
 
+    fig, ax = plt.subplots()
+    sns.barplot(x='parental_education_score', y='dropout', data=data, ax=ax, estimator=lambda x: sum(x == "yes") / len(x) * 100)
+    ax.set_title('Dropout Rate by Parental Education Score')
+    ax.set_ylabel('Dropout Rate (%)')
+    ax.set_xlabel('Parental Education Score')
+    st.pyplot(fig)
+
 if uploaded_file:
     data = load_and_process_data(uploaded_file)
     st.write("Uploaded Dataset:", data.head())
