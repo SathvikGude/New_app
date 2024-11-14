@@ -1,104 +1,90 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report
-import numpy as np
+from sklearn.metrics import classification_report
+from io import BytesIO
 
-# Function to load and preprocess data
-def load_data(uploaded_file):
+st.title("Student Dropout Prediction and Analysis")
+
+# File Upload
+uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
+
+def load_and_process_data(uploaded_file):
     data = pd.read_csv(uploaded_file)
-
-    # Convert yes/no columns to numeric
-    binary_columns = ['schoolsup', 'famsup', 'paid', 'activities', 'nursery', 'higher', 'internet', 'romantic']
-    for col in binary_columns:
-        data[col] = data[col].apply(lambda x: 1 if x == 'yes' else 0)
-
-    # Feature engineering
-    data['social_engagement'] = data[['freetime', 'goout', 'romantic']].sum(axis=1)
-    data['activity_score'] = data['studytime'] + data['traveltime']
-    data['avg_alcohol_consumption'] = (data['Dalc'] + data['Walc']) / 2
+    # Feature Engineering
+    data['parental_education_score'] = data['Medu'] + data['Fedu']
     data['travel_study_ratio'] = np.where(data['studytime'] == 0, 0, data['traveltime'] / data['studytime'])
-    data['parental_education_score'] = (data['Medu'] + data['Fedu']) / 2
-
-    # Create a dropout label based on the engineered features
-    data['dropout'] = data.apply(
-        lambda row: 'yes' if (row['absences'] > 20 or row['avg_alcohol_consumption'] > 2 or
-                              row['social_engagement'] < 5 or row['activity_score'] < 3 or
-                              row['travel_study_ratio'] > 1.5 or row['parental_education_score'] < 2)
-        else 'no', axis=1
-    )
+    data['avg_alcohol_consumption'] = (data['Dalc'] + data['Walc']) / 2
+    data['activity_score'] = data[['activities', 'paid', 'nursery']].applymap(lambda x: 1 if x == 'yes' else 0).sum(axis=1)
+    data['support_system_score'] = data[['schoolsup', 'famsup']].applymap(lambda x: 1 if x == 'yes' else 0).sum(axis=1)
+    data['grade_trend'] = data['G3'] - data['G1']
+    data['high_absenteeism'] = data['absences'].apply(lambda x: 1 if x > 20 else 0)
     return data
 
-# Function to display data summary
-def display_data_summary(data):
-    st.write("### Data Summary")
-    st.write("Basic descriptive statistics:")
-    st.write(data.describe(include='all'))
-
-    st.write("### Missing Values")
-    st.write(data.isnull().sum())
-
-# Correlation heatmap
-def plot_correlation_heatmap(data):
-    st.write("### Correlation Heatmap")
-    correlation = data.corr()
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(correlation, annot=True, cmap="YlGnBu", fmt=".2f")
-    st.pyplot()
-
-# Pair plot for selected features
-def plot_pairplot(data, selected_features):
-    st.write("### Pairplot of Selected Features")
-    sns.pairplot(data[selected_features + ['dropout']], hue='dropout', diag_kind='kde')
-    st.pyplot()
-
-# Model prediction and evaluation
-def run_model(data):
-    st.write("### Predictive Model - Logistic Regression")
-
-    # Prepare data for modeling with all engineered features
-    features = ['absences', 'social_engagement', 'activity_score', 'avg_alcohol_consumption',
-                'travel_study_ratio', 'parental_education_score']
+def build_model(data):
+    features = ['parental_education_score', 'travel_study_ratio', 'avg_alcohol_consumption', 
+                'activity_score', 'support_system_score', 'grade_trend', 'high_absenteeism']
     X = data[features]
-    y = data['dropout'].apply(lambda x: 1 if x == 'yes' else 0)
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    model = LogisticRegression()
+    y = data['G3'].apply(lambda x: 1 if x < 10 else 0)  # Example criterion for dropout
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    model = RandomForestClassifier()
     model.fit(X_train, y_train)
-
-    # Predictions and evaluation
     y_pred = model.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
-    st.write(f"Accuracy: {accuracy:.2f}")
-    st.write("Classification Report:")
-    st.write(classification_report(y_test, y_pred, target_names=["No Dropout", "Dropout"]))
+    st.write("Model Accuracy:", model.score(X_test, y_test))
+    st.write(classification_report(y_test, y_pred))
+    data['dropout'] = model.predict(X)
+    return data
 
-# Main Streamlit app function
-def main():
-    st.title("Enhanced Student Dropout Prediction")
+def download_csv(data):
+    csv_data = data.to_csv(index=False).encode()
+    return csv_data
 
-    uploaded_file = st.file_uploader("Upload your dataset (CSV)", type=["csv"])
+def plot_visualizations(data):
+    st.subheader("Visualizations")
+    
+    # Pie Chart: Attendance percentages
+    attendance = data['absences'].apply(lambda x: 'High' if x > 20 else 'Low')
+    st.write("Attendance Levels")
+    fig, ax = plt.subplots()
+    attendance.value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
+    st.pyplot(fig)
+    
+    # Parent Education Score
+    st.write("Parent Education Score")
+    fig, ax = plt.subplots()
+    sns.histplot(data['parental_education_score'], kde=True, ax=ax)
+    st.pyplot(fig)
+    
+    # Travel Study Ratio
+    st.write("Travel Study Ratio")
+    fig, ax = plt.subplots()
+    sns.histplot(data['travel_study_ratio'], kde=True, ax=ax)
+    st.pyplot(fig)
+    
+    # Social Engagement
+    st.write("Social Engagement")
+    fig, ax = plt.subplots()
+    sns.lineplot(data=data[['freetime', 'goout']])
+    st.pyplot(fig)
+    
+    # Grade Trend
+    st.write("Grade Trend")
+    fig, ax = plt.subplots()
+    sns.lineplot(data=data['grade_trend'])
+    st.pyplot(fig)
 
-    if uploaded_file is not None:
-        data = load_data(uploaded_file)
-
-        # Display data summary
-        display_data_summary(data)
-
-        # Show correlations
-        plot_correlation_heatmap(data)
-
-        # Feature selection for pairplot
-        all_features = data.columns.tolist()
-        selected_features = st.multiselect("Select features for pair plot visualization", all_features, default=['G1', 'G2', 'G3', 'absences'])
-        if selected_features:
-            plot_pairplot(data, selected_features)
-
-        # Run and display model results
-        run_model(data)
-
-if __name__ == "__main__":
-    main()
+if uploaded_file:
+    data = load_and_process_data(uploaded_file)
+    st.write("Uploaded Dataset:", data.head())
+    data_with_dropout = build_model(data)
+    
+    # Download CSV with Dropout column
+    csv_data = download_csv(data_with_dropout)
+    st.download_button("Download CSV with Dropout Column", data=csv_data, file_name="student_dropout.csv")
+    
+    # Visualization
+    plot_visualizations(data_with_dropout)
