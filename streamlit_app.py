@@ -49,6 +49,7 @@ def train_model(data):
     return model
 
 # Visualization function
+# Visualization function
 def visualize_data(data):
     st.write("## Data Visualizations")
     
@@ -81,7 +82,15 @@ def visualize_data(data):
     
     # Social engagement score distribution
     st.write("### Social Engagement Distribution")
+    
+    # Convert categorical engagement indicators to numeric (0 or 1)
+    data['freetime'] = pd.to_numeric(data['freetime'], errors='coerce').fillna(0)
+    data['goout'] = pd.to_numeric(data['goout'], errors='coerce').fillna(0)
+    data['romantic'] = pd.to_numeric(data['romantic'], errors='coerce').fillna(0)
+    
+    # Calculate social engagement
     data['social_engagement'] = data[['freetime', 'goout', 'romantic']].sum(axis=1)
+    
     plt.figure(figsize=(8, 5))
     sns.histplot(data['social_engagement'], kde=True, color='lightgreen')
     st.pyplot(plt)
