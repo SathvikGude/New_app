@@ -5,93 +5,124 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
-from io import BytesIO
+from sklearn.metrics import classification_report, accuracy_score
 
-st.title("Student Dropout Prediction and Analysis")
-
-# File Upload
-uploaded_file = st.file_uploader("Upload your CSV file", type=["csv"])
-
-def load_and_process_data(uploaded_file):
-    data = pd.read_csv(uploaded_file)
-    # Feature Engineering
+# Load the data
+def load_data(file):
+    data = pd.read_csv(file)
+    
+    # Adding derived columns for dropout prediction
     data['parental_education_score'] = data['Medu'] + data['Fedu']
     data['travel_study_ratio'] = np.where(data['studytime'] == 0, 0, data['traveltime'] / data['studytime'])
     data['avg_alcohol_consumption'] = (data['Dalc'] + data['Walc']) / 2
-    data['activity_score'] = data[['activities', 'paid', 'nursery']].applymap(lambda x: 1 if x == 'yes' else 0).sum(axis=1)
-    data['support_system_score'] = data[['schoolsup', 'famsup']].applymap(lambda x: 1 if x == 'yes' else 0).sum(axis=1)
+    data['activity_score'] = data[['activities', 'paid', 'nursery']].apply(lambda x: sum(x == "yes"), axis=1)
+    data['support_system_score'] = data[['schoolsup', 'famsup']].apply(lambda x: sum(x == "yes"), axis=1)
     data['grade_trend'] = data['G3'] - data['G1']
-    data['high_absenteeism'] = data['absences'].apply(lambda x: 1 if x > 20 else 0)
+    data['high_absenteeism'] = data['absences'] > 20  # example threshold
+    
+    # Dropout prediction (1 for dropout, 0 for no dropout) based on some basic rules
+    conditions = [
+        (data['parental_education_score'] < 3) | 
+        (data['travel_study_ratio'] > 2) |
+        (data['avg_alcohol_consumption'] > 3) |
+        (data['activity_score'] < 1) |
+        (data['support_system_score'] < 1) |
+        (data['grade_trend'] < -5) |
+        (data['high_absenteeism'] == True)
+    ]
+    data['dropout'] = np.where(np.any(conditions, axis=0), 'yes', 'no')
+    
     return data
 
-def build_model(data):
-    features = ['parental_education_score', 'travel_study_ratio', 'avg_alcohol_consumption', 
-                'activity_score', 'support_system_score', 'grade_trend', 'high_absenteeism']
-    X = data[features]
-    y = data['G3'].apply(lambda x: 1 if x < 10 else 0)  # Example criterion for dropout
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+# Function to train dropout prediction model
+def train_model(data):
+    X = data[['parental_education_score', 'travel_study_ratio', 'avg_alcohol_consumption', 
+              'activity_score', 'support_system_score', 'grade_trend', 'absences']]
+    y = data['dropout'].apply(lambda x: 1 if x == 'yes' else 0)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     model = RandomForestClassifier()
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
-    st.write("Model Accuracy:", model.score(X_test, y_test))
+    st.write("### Model Performance")
+    st.write("Accuracy:", accuracy_score(y_test, y_pred))
     st.write(classification_report(y_test, y_pred))
-    data['dropout'] = model.predict(X)
-    return data
+    return model
 
-def download_csv(data):
-    csv_data = data.to_csv(index=False).encode()
-    return csv_data
+# Visualization function
+def visualize_data(data):
+    st.write("## Data Visualizations")
+    
+    # Pie chart for attendance (Dropout vs. No Dropout)
+    st.write("### Dropout Rate")
+    dropout_counts = data['dropout'].value_counts()
+    plt.figure(figsize=(6, 6))
+    plt.pie(dropout_counts, labels=dropout_counts.index, autopct='%1.1f%%', startangle=140, colors=["#ff9999","#66b3ff"])
+    st.pyplot(plt)
+    st.write("This pie chart shows the proportion of students who are predicted to drop out vs. those who are not. "
+             "A higher dropout rate may indicate underlying issues within the student body that need addressing.")
+    
+    # Parental education score distribution
+    st.write("### Parental Education Score Distribution")
+    plt.figure(figsize=(8, 5))
+    sns.histplot(data['parental_education_score'], kde=True, color='skyblue')
+    st.pyplot(plt)
+    st.write("This histogram shows the distribution of parental education scores among students. "
+             "Higher scores indicate that both parents have a higher level of education, which is often linked "
+             "to better academic support at home.")
+    
+    # Travel-study ratio distribution
+    st.write("### Travel to Study Time Ratio")
+    plt.figure(figsize=(8, 5))
+    sns.histplot(data['travel_study_ratio'], kde=True, color='salmon')
+    st.pyplot(plt)
+    st.write("The travel-to-study time ratio highlights the balance between commute time and study time. "
+             "A higher ratio could imply that students spend more time commuting than studying, which might "
+             "impact their academic focus and performance.")
+    
+    # Social engagement score distribution
+    st.write("### Social Engagement Distribution")
+    data['social_engagement'] = data[['freetime', 'goout', 'romantic']].sum(axis=1)
+    plt.figure(figsize=(8, 5))
+    sns.histplot(data['social_engagement'], kde=True, color='lightgreen')
+    st.pyplot(plt)
+    st.write("This chart shows the distribution of social engagement scores, which considers free time, "
+             "outings, and romantic relationships. High engagement could either positively or negatively "
+             "impact academic performance, depending on the individual.")
+    
+    # Grade trend visualization
+    st.write("### Grade Trend from G1 to G3")
+    plt.figure(figsize=(8, 5))
+    plt.plot(data.index, data['G1'], label='G1', color='blue')
+    plt.plot(data.index, data['G2'], label='G2', color='orange')
+    plt.plot(data.index, data['G3'], label='G3', color='green')
+    plt.xlabel("Students")
+    plt.ylabel("Grades")
+    plt.legend()
+    st.pyplot(plt)
+    st.write("This line plot shows the progression of grades (G1, G2, and G3) for each student. "
+             "A downward trend from G1 to G3 might indicate students who are struggling academically, "
+             "which could be linked to dropout risk.")
 
-def plot_visualizations(data):
-    st.subheader("Visualizations")
-    
-    # Pie Chart: Attendance percentages
-    attendance = data['absences'].apply(lambda x: 'High' if x > 20 else 'Low')
-    st.write("Attendance Levels")
-    fig, ax = plt.subplots()
-    attendance.value_counts().plot.pie(autopct="%1.1f%%", ax=ax)
-    st.pyplot(fig)
-    
-    # Parent Education Score
-    st.write("Parent Education Score")
-    fig, ax = plt.subplots()
-    sns.histplot(data['parental_education_score'], kde=True, ax=ax)
-    st.pyplot(fig)
-    
-    # Travel Study Ratio
-    st.write("Travel Study Ratio")
-    fig, ax = plt.subplots()
-    sns.histplot(data['travel_study_ratio'], kde=True, ax=ax)
-    st.pyplot(fig)
-    
-    # Social Engagement
-    st.write("Social Engagement")
-    fig, ax = plt.subplots()
-    sns.lineplot(data=data[['freetime', 'goout']])
-    st.pyplot(fig)
-    
-    # Grade Trend
-    st.write("Grade Trend")
-    fig, ax = plt.subplots()
-    sns.lineplot(data=data['grade_trend'])
-    st.pyplot(fig)
-
-    fig, ax = plt.subplots()
-    sns.barplot(x='parental_education_score', y='dropout', data=data, ax=ax, estimator=lambda x: sum(x == "yes") / len(x) * 100)
-    ax.set_title('Dropout Rate by Parental Education Score')
-    ax.set_ylabel('Dropout Rate (%)')
-    ax.set_xlabel('Parental Education Score')
-    st.pyplot(fig)
+# Streamlit app layout
+st.title("Student Dropout Prediction and Analysis Tool")
+uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
 
 if uploaded_file:
-    data = load_and_process_data(uploaded_file)
-    st.write("Uploaded Dataset:", data.head())
-    data_with_dropout = build_model(data)
+    data = load_data(uploaded_file)
+    st.write("### Data Preview")
+    st.write(data.head())
     
-    # Download CSV with Dropout column
-    csv_data = download_csv(data_with_dropout)
-    st.download_button("Download CSV with Dropout Column", data=csv_data, file_name="student_dropout.csv")
+    model = train_model(data)
     
-    # Visualization
-    plot_visualizations(data_with_dropout)
+    st.write("### Visualization of Student Data")
+    visualize_data(data)
+    
+    st.write("### Download Processed Data")
+    processed_data = data.copy()
+    processed_data.to_csv("/mnt/data/processed_student_data.csv", index=False)
+    st.download_button(
+        label="Download CSV",
+        data=processed_data.to_csv(index=False),
+        file_name="processed_student_data.csv",
+        mime="text/csv"
+    )
