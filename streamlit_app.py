@@ -127,6 +127,7 @@ if uploaded_file:
     visualize_data(data)
     
     st.write("### Download Processed Data")
+    processed_data = data.copy()
     csv_data = processed_data.to_csv(index=False)
     st.download_button(
         label="Download Processed Data",
