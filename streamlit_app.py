@@ -127,11 +127,10 @@ if uploaded_file:
     visualize_data(data)
     
     st.write("### Download Processed Data")
-    processed_data = data.copy()
-    processed_data.to_csv("/mnt/data/processed_student_data.csv", index=False)
+    csv_data = processed_data.to_csv(index=False)
     st.download_button(
-        label="Download CSV",
-        data=processed_data.to_csv(index=False),
+        label="Download Processed Data",
+        data=csv_data,
         file_name="processed_student_data.csv",
         mime="text/csv"
     )
