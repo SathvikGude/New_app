@@ -113,8 +113,7 @@ def visualize_data(data):
              "which could be linked to dropout risk.")
 
 # Streamlit app layout
-st.title("Data-Driven System for prediction of student Dropouts 
-        Using Machine Learning")
+st.title("Data-Driven System for prediction of student Dropouts Using Machine Learning")
 uploaded_file = st.file_uploader("Upload your CSV file", type="csv")
 
 if uploaded_file:
